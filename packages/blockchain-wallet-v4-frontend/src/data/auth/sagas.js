@@ -92,7 +92,7 @@ export default ({ api, coreSagas }) => {
     if (userFlowSupported) yield put(actions.modules.profile.signIn())
   }
 
-  const loginRoutineSaga = function*(mobileLogin, firstLogin) {
+  const loginRoutineSaga = function*({ payload: { mobileLogin, firstLogin } }) {
     try {
       // If needed, the user should upgrade its wallet before being able to open the wallet
       const isHdWallet = yield select(selectors.core.wallet.isHdWallet)
@@ -117,8 +117,12 @@ export default ({ api, coreSagas }) => {
       yield put(actions.middleware.webSocket.btc.startSocket())
       yield put(actions.middleware.webSocket.eth.startSocket())
       yield put(actions.middleware.webSocket.xlm.startStreams())
-      yield put(actions.router.push('/home'))
-      yield call(coreSagas.settings.fetchSettings)
+
+      // We must disable this because it confuses the Main Process.  In the
+      // future we'll cull this saga entirely from the Root Document.
+      // yield put(actions.router.push('/home'))
+
+      yield put(actions.core.settings.fetchSettings())
       yield call(coreSagas.data.xlm.fetchLedgerDetails)
       yield call(coreSagas.data.xlm.fetchData)
       yield call(authNabu)
@@ -222,7 +226,7 @@ export default ({ api, coreSagas }) => {
         password,
         code
       })
-      yield call(loginRoutineSaga, mobileLogin)
+      yield put(actions.auth.loginRoutine(mobileLogin))
     } catch (error) {
       const initialError = prop('initial_error', error)
       const authRequired = prop('authorization_required', error)
@@ -245,7 +249,7 @@ export default ({ api, coreSagas }) => {
               session,
               password
             })
-            yield call(loginRoutineSaga, mobileLogin)
+            yield put(actions.auth.loginRoutine(mobileLogin))
           } catch (error) {
             if (error && error.auth_type > 0) {
               yield put(actions.auth.setAuthType(error.auth_type))
@@ -334,7 +338,12 @@ export default ({ api, coreSagas }) => {
       yield put(actions.alerts.displayInfo(C.CREATE_WALLET_INFO))
       yield call(coreSagas.wallet.createWalletSaga, action.payload)
       yield put(actions.alerts.displaySuccess(C.REGISTER_SUCCESS))
-      yield call(loginRoutineSaga, false, true)
+
+      // Temporarily send the whole wrapper over to the Main Process.
+      const wrapper = yield select(selectors.core.wallet.getWrapper)
+      yield put(actions.core.wallet.setWrapper(wrapper))
+
+      yield put(actions.auth.loginRoutine(false, true))
       yield put(actions.auth.registerSuccess())
     } catch (e) {
       yield put(actions.auth.registerFailure())
@@ -349,7 +358,7 @@ export default ({ api, coreSagas }) => {
       yield put(actions.alerts.displayInfo(C.RESTORE_WALLET_INFO))
       yield call(coreSagas.wallet.restoreWalletSaga, action.payload)
       yield put(actions.alerts.displaySuccess(C.RESTORE_SUCCESS))
-      yield call(loginRoutineSaga, false, true)
+      yield put(actions.auth.loginRoutine(false, true))
       yield put(actions.auth.restoreSuccess())
     } catch (e) {
       yield put(actions.auth.restoreFailure())
